@@ -73,3 +73,12 @@ Plugins/**/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
+BumperFight/Binaries
+BumperFight/Saved/UnrealBuildTool
+BumperFight/Saved/SourceControl
+BumperFight/Saved/Logs
+BumperFight/Saved/Config
+BumperFight/Saved
+BumperFight/.idea
+BumperFight/Config
+BumperFight/Intermediate
