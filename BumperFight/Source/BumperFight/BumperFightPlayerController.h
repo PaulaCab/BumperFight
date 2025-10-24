@@ -11,6 +11,8 @@
 class UNiagaraSystem;
 class UInputMappingContext;
 class UInputAction;
+class ADuck;
+class APredictionLine;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
@@ -49,9 +51,15 @@ protected:
 	/** Input handlers for SetDestination action. */
 	void OnInputStarted();
 	void OnSetDestinationTriggered();
+	void OnSetDestinationOngoing();
 	void OnSetDestinationReleased();
 	void OnTouchTriggered();
 	void OnTouchReleased();
+
+	TArray<FVector> PredictImpulseTrayectory(ADuck* Duck, const FVector& Impulse);
+
+	UPROPERTY(EditDefaultsOnly)	TSubclassOf<APredictionLine> PredictionLineClass = nullptr;
+	UPROPERTY()	APredictionLine* PredictionLine = nullptr;
 
 private:
 	FVector CachedDestination;

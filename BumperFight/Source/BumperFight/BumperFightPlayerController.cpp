@@ -11,6 +11,7 @@
 #include "EnhancedInputComponent.h"
 #include "InputActionValue.h"
 #include "EnhancedInputSubsystems.h"
+#include "PredictionLine.h"
 #include "Engine/LocalPlayer.h"
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
@@ -33,6 +34,12 @@ void ABumperFightPlayerController::BeginPlay()
 	{
 		Subsystem->AddMappingContext(DefaultMappingContext, 0);
 	}
+
+	auto* world = GetWorld();
+	if (!PredictionLineClass || !world)
+		return;
+	
+	PredictionLine = GetWorld()->SpawnActor<APredictionLine>(PredictionLineClass, FTransform::Identity);
 }
 
 void ABumperFightPlayerController::SetupInputComponent()
@@ -45,6 +52,7 @@ void ABumperFightPlayerController::SetupInputComponent()
 	{
 		// Setup mouse input events
 		EnhancedInputComponent->BindAction(ClickAction, ETriggerEvent::Started, this, &ABumperFightPlayerController::OnSetDestinationTriggered);
+		EnhancedInputComponent->BindAction(ClickAction, ETriggerEvent::Ongoing, this, &ABumperFightPlayerController::OnSetDestinationOngoing);
 		EnhancedInputComponent->BindAction(ClickAction, ETriggerEvent::Completed, this, &ABumperFightPlayerController::OnSetDestinationReleased);
 		EnhancedInputComponent->BindAction(ClickAction, ETriggerEvent::Canceled, this, &ABumperFightPlayerController::OnSetDestinationReleased);
 	}
@@ -84,6 +92,26 @@ void ABumperFightPlayerController::OnSetDestinationTriggered()
 	//TODO: Give some type of feedback i guess
 }
 
+void ABumperFightPlayerController::OnSetDestinationOngoing()
+{
+	if(!SelectedDuck)
+		return;
+
+	float x, y;
+	GetMousePosition(x,y);
+	FVector MousePosition = FVector(x,y,0);
+
+	auto dist = FVector::Dist(CachedMousePosition, MousePosition);
+	if(dist<5)
+		return; //TODO: Erase prediction spline
+	auto dir = (CachedMousePosition-MousePosition).GetSafeNormal();
+
+	auto predictionPoints = PredictImpulseTrayectory(SelectedDuck, dir*dist*LaunchForceFactor);
+	
+	if(PredictionLine)
+		PredictionLine->SetPoints(predictionPoints);
+}
+
 void ABumperFightPlayerController::OnSetDestinationReleased()
 {
 	if(!SelectedDuck)
@@ -98,5 +126,54 @@ void ABumperFightPlayerController::OnSetDestinationReleased()
 		return;
 	auto dir = (CachedMousePosition-MousePosition).GetSafeNormal();
 	SelectedDuck->LaunchDuck(dir, dist*LaunchForceFactor);
+}
+
+TArray<FVector> ABumperFightPlayerController::PredictImpulseTrayectory(ADuck* Duck, const FVector& Impulse)
+{
+	TArray<FVector> Points;
+
+	auto* world = GetWorld();
+	if (!Duck || !Duck->Mesh || !world) return Points;
+
+	auto mesh = Duck->Mesh;
+
+	FVector StartPos = Duck->GetActorLocation();
+	Points.Add(StartPos);
+
+	FVector Velocity = Impulse / mesh->GetMass();
+	FVector Direction = Velocity.GetSafeNormal();
+	float Speed = Velocity.Size();
+
+	// Distancia total antes de frenar por damping
+	float Distance = Speed / (mesh->GetLinearDamping()*mesh->GetMass()*2);
+	
+	FVector EndPos = StartPos + Direction * Distance;
+
+	// Line trace para detectar colisión
+	FHitResult Hit;
+	FCollisionQueryParams Params;
+	Params.AddIgnoredComponent(mesh);
+	
+	if (world->LineTraceSingleByChannel(Hit,	StartPos + FVector::UpVector, EndPos+FVector::UpVector,ECC_PhysicsBody, Params	))
+	{
+		Points.Add(Hit.ImpactPoint);
+		
+		float DistanceTraveled = (Hit.ImpactPoint - StartPos).Size();
+		float RemainingDistance = FMath::Max(0.f, Distance - DistanceTraveled);
+		
+		FVector ReflectedDir = FVector::VectorPlaneProject(Direction, Hit.Normal).GetSafeNormal();
+		
+		FVector FinalPos = Hit.ImpactPoint + ReflectedDir * RemainingDistance;
+		FinalPos.Z = StartPos.Z;
+
+		Points.Add(FinalPos);
+	}
+	else
+	{
+		EndPos.Z = StartPos.Z; 
+		Points.Add(EndPos);
+	}
+
+	return Points;
 }
 
